@@ -1,109 +1,83 @@
 ---
 name: gh-pr
-description: Create or update GitHub pull requests with gh CLI. Use when the user asks to 作成/更新 PR, draft PR, or PR本文生成. Generates Japanese PR title/body from git diffs, defaults base branch to next_release (configurable), detects UI changes for screenshots, extracts AME-XXXX tickets, and requires explicit user confirmation before any git push/gh pr create/edit.
+description: Create or update GitHub pull requests with the gh CLI. Use when the user asks to create/update PRs, draft PRs, or generate PR text. Generate Japanese PR title/body from git diffs, default base branch to next_release (configurable), detect UI changes for screenshots, extract Linear ticket IDs (generic format, e.g., XXX-1234), and require explicit user confirmation before any git push/gh pr create/edit.
 ---
 
 # Gh Pr
 
-GitHub PRの作成/更新を自動化する。現在ブランチの差分を分析し、日本語のPRタイトルと本文を生成して、ユーザー確認後にghで反映する。
+Automate GitHub PR creation/update. Analyze diffs on the current branch, generate a Japanese PR title/body, and apply via gh after explicit user confirmation.
 
 ## Workflow
 
-### 1) 入力の解釈
-以下の意図を抽出する：
-- 新規作成 or 既存PR更新（`update <PR番号>`）
-- `--base <branch>` 指定の有無（未指定なら `next_release`）
-- `--draft` の有無
+### 1) Interpret the request
+Extract the intent:
+- Create new PR or update existing PR (`update <PR number>`)
+- Base branch override via `--base <branch>` (default `next_release` if unspecified)
+- `--draft` flag
 
-不明点があれば先に確認する（PR番号、ベースブランチなど）。
+If anything is unclear, ask first (PR number, base branch, etc.).
 
-### 2) 事前チェック
-最小限の安全確認を行う：
-- gh認証状態（必要なら `gh auth status` を提案）
-- ベースブランチの存在（`git show-ref --verify refs/heads/<base>` など）
-- ローカルの変更がコミット済みか（`git status -sb`）
+### 2) Pre-checks
+Perform minimal safety checks:
+- gh auth status (suggest `gh auth status` if needed)
+- Base branch exists (`git show-ref --verify refs/heads/<base>`)
+- Local changes are committed (`git status -sb`)
 
-### 3) 差分情報の収集
-以下を収集して要約する（大きい差分は要約・主要箇所に集中）：
+### 3) Collect diff context
+Gather and summarize (focus on key parts for large diffs):
 - `git diff <base>...HEAD`
 - `git diff <base>...HEAD --stat`
 - `git log --oneline <base>..HEAD`
-- 主要変更ファイルの内容（必要な範囲だけ読む）
+- Relevant file contents (only what is necessary)
 
-除外推奨：バイナリ、自動生成、巨大ファイル。
+Exclude binaries, generated files, or huge files unless explicitly requested.
 
-### 4) 付加情報の抽出
-- **チケット番号**: コミットメッセージから `AME-XXXX` を抽出
-- **UI変更検出**: `*.tsx`、`components/`、スタイル関連ファイルの変更があればUI変更とみなす
+### 4) Extract additional signals
+- **Ticket IDs**: Extract Linear ticket IDs from commit messages and branch names. Treat any project prefix like `AME-` as a Linear ticket format, and normalize examples/output to `XXX-1234` (do not hardcode project prefixes).
+- **UI change detection**: If `*.tsx`, `components/`, or style-related files changed, treat as UI changes.
 
-UI変更があればスクリーンショット/動画の記載を促す。
+If UI changes are detected, prompt for screenshots/videos in the PR body.
 
-### 5) PR本文の生成（日本語）
-テンプレは以下を使用（必要に応じて簡潔化）：
+### 5) Generate PR body (Japanese)
+Use the template in `assets/pr-body-template.md` (trim sections when unnecessary). Do not inline the template in the skill body; load and follow the asset file when generating.
 
-```markdown
-## 🎯 このPRの目的
-[変更の主な目的を簡潔に記述]
+### 6) Preview and revise
+Always show and confirm:
+- Base branch
+- Draft/regular
+- Proposed PR title
+- Full PR body
+- Extracted ticket IDs
+- UI change detection result
 
-## ✨ 主な変更点
-- [技術的な変更内容を具体的に列挙]
+Apply user edits and finalize.
 
-## 🛠️ 補助的な作業
-- [リファクタリング、型定義の追加など]
-
-## 🤔 なぜこの変更が必要か？
-[ビジネス価値や技術的な理由]
-
-## ✅ レビュワーへのお願い
-[特に注意して見てほしい箇所]
-
-## 📝 関連ドキュメント
-[AME-XXXX を列挙]
-
-## 🖼️ スクリーンショット/動画
-[UI変更時のみ]
-
-## ❌ やらないこと
-[今回のスコープ外の内容]
-```
-
-### 6) プレビューと修正
-必ず以下を表示して確認を取る：
-- ベースブランチ
-- Draft/通常
-- PRタイトル案
-- PR本文全文
-- 抽出したチケット番号
-- UI変更検出結果
-
-ユーザーの修正を反映し、最終版を確定する。
-
-### 7) 実行前の明示確認（必須）
-**グローバルポリシー準拠**で、実行前に以下を提示して「y/N」で確認する：
-- リポジトリ絶対パス
-- 現在ブランチ
+### 7) Explicit confirmation before execution (required)
+**Follow the global policy** and present the following before execution, then ask for explicit `y/N`:
+- Repo absolute path
+- Current branch
 - `git status -sb`
 - `git diff --staged`
 - `git diff`
-- 実行予定コマンド（1行1コマンド）
+- Full list of commands to run (one command per line)
 
-ユーザーが明示的に「はい」するまで、git push / gh コマンドは**実行しない**。
+Do not run git push or gh commands until the user explicitly says yes.
 
-### 8) 実行
-承認後に“一度だけ”実行する（再試行やループは禁止）。
+### 8) Execute (one-time only)
+After approval, run once only (no retries or loops).
 
-**新規作成**
-- 必要なら `git push -u origin <branch>`
-- `gh pr create --title "<タイトル>" --body "<本文>" --base <base>`
-- Draftの場合は `--draft` を付与
+**Create**
+- If needed: `git push -u origin <branch>`
+- `gh pr create --title "<title>" --body "<body>" --base <base>`
+- Add `--draft` when requested
 
-**更新**
-- `gh pr edit <PR番号> --body "<本文>"`
+**Update**
+- `gh pr edit <PR number> --body "<body>"`
 
-実行後は結果（成否、`gh pr view` の要約など）を簡潔に報告する。
+Report the result briefly (success/failure, `gh pr view` summary, etc.).
 
-## 出力の品質ガイド
-- PR本文は日本語で、読みやすい箇条書きにする
-- 変更点は「何を」「どう変えたか」が分かる具体性
-- レビュアーへのお願いは1〜2点に絞る
-- 余計な長文は避ける（要点重視）
+## Output quality guide
+- Write PR title/body in Japanese with clear bullet points
+- Make changes concrete: what changed and how
+- Limit reviewer asks to 1-2 items
+- Prefer concise, high-signal content
